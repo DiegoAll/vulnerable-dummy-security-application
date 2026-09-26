@@ -1,9 +1,11 @@
 pipeline {
-    agent {
-        docker {
-            image 'golang:1.22'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
+    agent any
+
+    environment {
+        GO_VERSION = '1.22.0'
+        GOROOT     = "${WORKSPACE}/go"
+        GOPATH     = "${WORKSPACE}/gopath"
+        PATH       = "${WORKSPACE}/go/bin:${WORKSPACE}/gopath/bin:${env.PATH}"
     }
 
     stages {
@@ -11,6 +13,24 @@ pipeline {
             steps {
                 git branch: 'main', 
                     url: 'https://github.com/DiegoAll/vulnerable-dummy-security-application.git'
+            }
+        }
+
+        stage('Setup Go Environment') {
+            steps {
+                script {
+                    echo "📦 Configurando entorno Go ${GO_VERSION}..."
+                    sh '''
+                        if [ ! -d "$GOROOT" ]; then
+                            curl -sL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz -o go.tar.gz
+                            mkdir -p $GOROOT
+                            tar -C $GOROOT --strip-components=1 -xzf go.tar.gz
+                            rm go.tar.gz
+                        fi
+                        mkdir -p $GOPATH/bin
+                        go version
+                    '''
+                }
             }
         }
 
