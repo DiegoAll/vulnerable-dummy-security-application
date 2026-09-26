@@ -2,10 +2,12 @@ pipeline {
     agent any
 
     environment {
-        GO_VERSION = '1.22.0'
-        GOROOT     = "${WORKSPACE}/go"
-        GOPATH     = "${WORKSPACE}/gopath"
-        PATH       = "${WORKSPACE}/go/bin:${WORKSPACE}/gopath/bin:${env.PATH}"
+        GO_VERSION  = '1.23.0'
+        GOROOT      = "${WORKSPACE}/go"
+        GOPATH      = "${WORKSPACE}/gopath"
+        PATH        = "${WORKSPACE}/go/bin:${WORKSPACE}/gopath/bin:${env.PATH}"
+        GOTOOLCHAIN = 'local'
+        CGO_ENABLED = '0'
     }
 
     stages {
