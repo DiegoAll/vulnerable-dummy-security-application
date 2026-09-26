@@ -1,9 +1,9 @@
 pipeline {
-    agent any
-
-    environment {
-        GOPATH = "${WORKSPACE}/.go"
-        PATH   = "${GOPATH}/bin:/usr/local/go/bin:${env.PATH}"
+    agent {
+        docker {
+            image 'golang:1.22'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
     }
 
     stages {
