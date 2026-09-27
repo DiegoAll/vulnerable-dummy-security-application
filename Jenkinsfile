@@ -24,9 +24,38 @@ pipeline {
             }
         }
 
-        stage('Unit Tests') {
+        stage('Unit Tests, Coverage & Profiling') {
             steps {
-                sh 'go test -v ./...'
+                script {
+                    echo '🧪 Instalando gotestsum...'
+                    sh 'go install gotest.tools/gotestsum@latest'
+
+                    echo '📊 Ejecutando pruebas unitarias, calculando cobertura y generando pprof...'
+                    sh '''
+                        ${GOPATH:-$HOME/go}/bin/gotestsum \
+                            --junitfile unit-tests-report.xml \
+                            --format testname \
+                            -- ./... \
+                            -coverprofile=coverage.out \
+                            -cpuprofile=cpu.pprof \
+                            -memprofile=mem.pprof
+
+                        # Genera el reporte HTML interactivo de cobertura
+                        go tool cover -html=coverage.out -o coverage.html
+
+                        # Genera un resumen legible de cobertura por función en consola
+                        go tool cover -func=coverage.out > coverage-summary.txt
+                    '''
+                }
+            }
+            post {
+                always {
+                    // Muestra el dashboard nativo y gráficos de tendencia de tests en Jenkins
+                    junit allowEmptyResults: true, testResults: 'unit-tests-report.xml'
+
+                    // Archiva el HTML de cobertura, el resumen en texto y los archivos pprof para profiling
+                    archiveArtifacts artifacts: 'coverage.html, coverage.out, coverage-summary.txt, *.pprof', allowEmptyArchive: true
+                }
             }
         }
 
