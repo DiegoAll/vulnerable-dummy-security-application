@@ -102,6 +102,32 @@ pipeline {
             }
         }
 
+        stage('Security - IaC Scan (KICS)') {
+            steps {
+                script {
+                    echo '🏗️ Ejecutando KICS para escaneo de IaC (Dockerfile/K8s)...'
+                    
+                    // Ejecuta el contenedor de KICS escaneando el directorio actual
+                    def exitCode = sh(
+                        script: '''
+                            docker run --rm -v $(pwd):/path checkmarx/kics:latest scan \
+                                -p /path \
+                                -o /path \
+                                --output-name kics-report \
+                                --report-formats json,txt || true
+                        ''',
+                        returnStatus: true
+                    )
+
+                    archiveArtifacts artifacts: 'kics-report.*', allowEmptyArchive: true
+
+                    if (exitCode != 0) {
+                        unstable('KICS detectó malas configuraciones de seguridad en la infraestructura.')
+                    }
+                }
+            }
+        }
+
         stage('Build Artifact') {
             steps {
                 echo '🔨 Compilando la aplicación Go...'
