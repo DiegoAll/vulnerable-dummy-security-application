@@ -109,10 +109,11 @@ pipeline {
 
                     def exitCode = sh(
                         script: '''
-                            if [ ! -f /tmp/kics ]; then
-                                echo "Descargando binario KICS..."
-                                curl -sL https://github.com/Checkmarx/kics/releases/download/v2.1.3/kics_2.1.3_linux_x64.tar.gz -o /tmp/kics.tar.gz
+                            if [ ! -x /tmp/kics ]; then
+                                echo "Descargando binario oficial de KICS (v2.1.20)..."
+                                curl -sSfL https://github.com/Checkmarx/kics/releases/download/v2.1.20/kics_2.1.20_linux_amd64.tar.gz -o /tmp/kics.tar.gz
                                 tar -xzf /tmp/kics.tar.gz -C /tmp kics
+                                chmod +x /tmp/kics
                                 rm -f /tmp/kics.tar.gz
                             fi
 
