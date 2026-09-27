@@ -109,6 +109,7 @@ pipeline {
 
                     def exitCode = sh(
                         script: '''
+                            # 1. Descarga del binario oficial si no existe en /tmp
                             if [ ! -x /tmp/kics ]; then
                                 echo "Descargando binario oficial de KICS (v2.1.20)..."
                                 curl -sSfL https://github.com/Checkmarx/kics/releases/download/v2.1.20/kics_2.1.20_linux_amd64.tar.gz -o /tmp/kics.tar.gz
@@ -117,11 +118,26 @@ pipeline {
                                 rm -f /tmp/kics.tar.gz
                             fi
 
+                            # 2. Descarga e instalación de assets (queries y libraries) si no existen
+                            if [ ! -d /tmp/kics-assets/queries ]; then
+                                echo "Descargando reglas (queries) de KICS..."
+                                curl -sSfL https://github.com/Checkmarx/kics/archive/refs/tags/v2.1.20.tar.gz -o /tmp/kics-src.tar.gz
+                                mkdir -p /tmp/kics-src-extract
+                                tar -xzf /tmp/kics-src.tar.gz -C /tmp/kics-src-extract
+                                mkdir -p /tmp/kics-assets
+                                cp -r /tmp/kics-src-extract/kics-2.1.20/assets/queries /tmp/kics-assets/
+                                cp -r /tmp/kics-src-extract/kics-2.1.20/assets/libraries /tmp/kics-assets/
+                                rm -rf /tmp/kics-src.tar.gz /tmp/kics-src-extract
+                            fi
+
+                            # 3. Ejecución del escaneo indicando las rutas de las queries
                             /tmp/kics scan \
                                 -p . \
                                 -o . \
                                 --output-name kics-report \
-                                --report-formats json,html || true
+                                --report-formats json,html \
+                                --queries-path /tmp/kics-assets/queries \
+                                --libraries-path /tmp/kics-assets/libraries || true
                         ''',
                         returnStatus: true
                     )
