@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        GO_VERSION  = '1.23.0'
+        GO_VERSION  = '1.23.2'
         GOROOT      = "${WORKSPACE}/go"
         GOPATH      = "${WORKSPACE}/gopath"
         PATH        = "${WORKSPACE}/go/bin:${WORKSPACE}/gopath/bin:${env.PATH}"
