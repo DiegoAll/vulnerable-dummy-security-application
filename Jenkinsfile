@@ -112,22 +112,26 @@ pipeline {
 
                     def exitCode = sh(
                         script: '''
+                            # Crea un directorio específico para los resultados
+                            mkdir -p kics-out
+
+                            # Monta el directorio actual mediante la ruta relativa '.'
                             docker run --rm \
-                                -v "${WORKSPACE}":/path \
+                                -v .:/path \
                                 checkmarx/kics:latest scan \
                                 -p /path \
-                                -o /path \
+                                -o /path/kics-out \
                                 --output-name kics-report \
                                 --report-formats json,txt || true
                         ''',
                         returnStatus: true
                     )
 
-                    // Archiva los reportes sin fallar el pipeline si el directorio aún no tiene IaC
-                    archiveArtifacts artifacts: 'kics-report.*', allowEmptyArchive: true
+                    // Archiva los reportes generados dentro de kics-out
+                    archiveArtifacts artifacts: 'kics-out/kics-report.*', allowEmptyArchive: true
 
                     if (exitCode != 0) {
-                        unstable('KICS detectó malas configuraciones de seguridad en la infraestructura.')
+                        unstable('KICS detectó observaciones de seguridad en la infraestructura.')
                     }
                 }
             }
