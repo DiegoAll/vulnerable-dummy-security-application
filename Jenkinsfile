@@ -12,7 +12,7 @@ pipeline {
         stage('Setup Go Environment') {
             steps {
                 sh '''
-                    apt-get update && apt-get install -y golang-go
+                    apt-get update && apt-get install -y golang-go curl
                     go version
                 '''
             }
@@ -105,28 +105,27 @@ pipeline {
         stage('Security - IaC Scan (KICS)') {
             steps {
                 script {
-                    echo '🏗️ Ejecutando KICS IaC Scan...'
+                    echo '🏗️ Instalando y ejecutando KICS CLI nativo...'
 
                     def exitCode = sh(
                         script: '''
-                            # Crea la carpeta de salida
-                            mkdir -p kics-out
+                            if [ ! -f /tmp/kics ]; then
+                                echo "Descargando binario KICS..."
+                                curl -sL https://github.com/Checkmarx/kics/releases/download/v2.1.3/kics_2.1.3_linux_x64.tar.gz -o /tmp/kics.tar.gz
+                                tar -xzf /tmp/kics.tar.gz -C /tmp kics
+                                rm -f /tmp/kics.tar.gz
+                            fi
 
-                            # Ejecuta KICS montando el workspace relativo
-                            docker run --rm \
-                                --user $(id -u):$(id -g) \
-                                -v "$PWD":/path \
-                                checkmarx/kics:latest scan \
-                                -p /path \
-                                -o /path/kics-out \
+                            /tmp/kics scan \
+                                -p . \
+                                -o . \
                                 --output-name kics-report \
                                 --report-formats json,txt || true
                         ''',
                         returnStatus: true
                     )
 
-                    // Archiva los artefactos desde kics-out
-                    archiveArtifacts artifacts: 'kics-out/kics-report.*', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'kics-report.*', allowEmptyArchive: true
 
                     if (exitCode != 0) {
                         unstable('KICS detectó observaciones de seguridad en la infraestructura.')
