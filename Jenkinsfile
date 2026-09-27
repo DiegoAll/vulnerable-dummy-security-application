@@ -121,7 +121,7 @@ pipeline {
                                 -p . \
                                 -o . \
                                 --output-name kics-report \
-                                --report-formats json,txt || true
+                                --report-formats json,html || true
                         ''',
                         returnStatus: true
                     )
