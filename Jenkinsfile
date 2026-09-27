@@ -1,15 +1,6 @@
 pipeline {
     agent any
 
-    environment {
-        GO_VERSION  = '1.23.2'
-        GOROOT      = "${WORKSPACE}/go"
-        GOPATH      = "${WORKSPACE}/gopath"
-        PATH        = "${WORKSPACE}/go/bin:${WORKSPACE}/gopath/bin:${env.PATH}"
-        GOTOOLCHAIN = 'local'
-        CGO_ENABLED = '0'
-    }
-
     stages {
         stage('Checkout Repository') {
             steps {
@@ -20,19 +11,10 @@ pipeline {
 
         stage('Setup Go Environment') {
             steps {
-                script {
-                    echo "📦 Configurando entorno Go ${GO_VERSION}..."
-                    sh '''
-                        if [ ! -d "$GOROOT" ]; then
-                            curl -sL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz -o go.tar.gz
-                            mkdir -p $GOROOT
-                            tar -C $GOROOT --strip-components=1 -xzf go.tar.gz
-                            rm go.tar.gz
-                        fi
-                        mkdir -p $GOPATH/bin
-                        go version
-                    '''
-                }
+                sh '''
+                    apt-get update && apt-get install -y golang-go
+                    go version
+                '''
             }
         }
 
@@ -44,7 +26,7 @@ pipeline {
 
         stage('Unit Tests') {
             steps {
-                sh 'go test -v -coverprofile=coverage.out ./...'
+                sh 'go test -v ./...'
             }
         }
 
@@ -53,7 +35,7 @@ pipeline {
                 script {
                     echo '🔍 Instalando y ejecutando govulncheck...'
                     sh 'go install golang.org/x/vuln/cmd/govulncheck@latest'
-                    sh 'govulncheck ./...'
+                    sh '${GOPATH:-$HOME/go}/bin/govulncheck ./...'
                 }
             }
         }
