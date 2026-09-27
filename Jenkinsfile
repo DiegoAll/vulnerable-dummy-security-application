@@ -35,7 +35,23 @@ pipeline {
                 script {
                     echo '🔍 Instalando y ejecutando govulncheck...'
                     sh 'go install golang.org/x/vuln/cmd/govulncheck@latest'
-                    sh '${GOPATH:-$HOME/go}/bin/govulncheck ./...'
+                    
+                    // Ejecuta govulncheck capturando la salida en texto y JSON
+                    def exitCode = sh(
+                        script: '''
+                            ${GOPATH:-$HOME/go}/bin/govulncheck -json ./... > govulncheck-report.json || true
+                            ${GOPATH:-$HOME/go}/bin/govulncheck ./... > govulncheck-report.txt
+                        ''',
+                        returnStatus: true
+                    )
+                    
+                    // Archiva los reportes como artefactos descargables en Jenkins
+                    archiveArtifacts artifacts: 'govulncheck-report.*', allowEmptyArchive: true
+
+                    // Si se encontraron vulnerabilidades, marca el stage/build como UNSTABLE (amarillo)
+                    if (exitCode != 0) {
+                        unstable('govulncheck encontró vulnerabilidades — consulta los artefactos descargables.')
+                    }
                 }
             }
         }
@@ -50,7 +66,7 @@ pipeline {
 
     post {
         always {
-            cleanWs()
+            cleanWs(notFailBuild: true)
         }
     }
 }
