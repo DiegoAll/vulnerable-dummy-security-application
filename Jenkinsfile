@@ -50,22 +50,41 @@ pipeline {
             }
             post {
                 always {
-                    // Muestra el dashboard nativo y gráficos de tendencia de tests en Jenkins
                     junit allowEmptyResults: true, testResults: 'unit-tests-report.xml'
-
-                    // Archiva el HTML de cobertura, el resumen en texto y los archivos pprof para profiling
                     archiveArtifacts artifacts: 'coverage.html, coverage.out, coverage-summary.txt, *.pprof', allowEmptyArchive: true
                 }
             }
         }
 
-        stage('Security - Go Vuln Check') {
+        stage('Security - SAST (Gosec)') {
+            steps {
+                script {
+                    echo '🔒 Instalando y ejecutando Gosec (SAST)...'
+                    sh 'go install github.com/securego/gosec/v2/cmd/gosec@latest'
+
+                    def exitCode = sh(
+                        script: '''
+                            ${GOPATH:-$HOME/go}/bin/gosec -fmt=text -out=gosec-report.txt ./... || true
+                            ${GOPATH:-$HOME/go}/bin/gosec -fmt=json -out=gosec-report.json ./... || true
+                        ''',
+                        returnStatus: true
+                    )
+
+                    archiveArtifacts artifacts: 'gosec-report.*', allowEmptyArchive: true
+
+                    if (exitCode != 0) {
+                        unstable('Gosec detectó hallazgos de seguridad en el código.')
+                    }
+                }
+            }
+        }
+
+        stage('Security - SCA (Go Vuln Check)') {
             steps {
                 script {
                     echo '🔍 Instalando y ejecutando govulncheck...'
                     sh 'go install golang.org/x/vuln/cmd/govulncheck@latest'
                     
-                    // Ejecuta govulncheck capturando la salida en texto y JSON
                     def exitCode = sh(
                         script: '''
                             ${GOPATH:-$HOME/go}/bin/govulncheck -json ./... > govulncheck-report.json || true
@@ -74,12 +93,10 @@ pipeline {
                         returnStatus: true
                     )
                     
-                    // Archiva los reportes como artefactos descargables en Jenkins
                     archiveArtifacts artifacts: 'govulncheck-report.*', allowEmptyArchive: true
 
-                    // Si se encontraron vulnerabilidades, marca el stage/build como UNSTABLE (amarillo)
                     if (exitCode != 0) {
-                        unstable('govulncheck encontró vulnerabilidades — consulta los artefactos descargables.')
+                        unstable('govulncheck encontró vulnerabilidades en las dependencias.')
                     }
                 }
             }
