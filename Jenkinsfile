@@ -12,7 +12,7 @@ pipeline {
         stage('Setup Go Environment') {
             steps {
                 sh '''
-                    apt-get update && apt-get install -y golang-go curl
+                    apt-get update && apt-get install -y golang-go
                     go version
                 '''
             }
@@ -105,24 +105,28 @@ pipeline {
         stage('Security - IaC Scan (KICS)') {
             steps {
                 script {
-                    echo '🏗️ Ejecutando KICS CLI nativo...'
+                    echo '🏗️ Ejecutando KICS IaC Scan...'
 
                     def exitCode = sh(
                         script: '''
-                            if [ ! -f /tmp/kics ]; then
-                                curl -sL https://github.com/Checkmarx/kics/releases/download/v2.1.3/kics_2.1.3_linux_x64.tar.gz | tar -xz -C /tmp kics
-                            fi
+                            # Crea la carpeta de salida
+                            mkdir -p kics-out
 
-                            /tmp/kics scan \
-                                -p . \
-                                -o . \
+                            # Ejecuta KICS montando el workspace relativo
+                            docker run --rm \
+                                --user $(id -u):$(id -g) \
+                                -v "$PWD":/path \
+                                checkmarx/kics:latest scan \
+                                -p /path \
+                                -o /path/kics-out \
                                 --output-name kics-report \
                                 --report-formats json,txt || true
                         ''',
                         returnStatus: true
                     )
 
-                    archiveArtifacts artifacts: 'kics-report.*', allowEmptyArchive: true
+                    // Archiva los artefactos desde kics-out
+                    archiveArtifacts artifacts: 'kics-out/kics-report.*', allowEmptyArchive: true
 
                     if (exitCode != 0) {
                         unstable('KICS detectó observaciones de seguridad en la infraestructura.')
