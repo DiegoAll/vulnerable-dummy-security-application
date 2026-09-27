@@ -91,7 +91,47 @@ OPERATE/MONITOR
 
 
 
+https://goharbor.io/
+
+https://github.com/goharbor/harbor
+
+
+
+
+
+Imagenes Enfermas
+
+- Juice Shop
+- ...
+
+
+Medium
+
+
+
 Analisis de Falcos positivos
 
 
 Darle un foco en Nube multiCloud
+
+
+    https://gocloud.dev/  golang + CDK
+
+
+Buckets
+
+Vulnerabilidades en buckets
+JDBL Video
+
+
+
+
+feat: — nueva funcionalidad para el usuario/consumidor del código
+fix: — corrección de un bug
+ci: — cambios en configuración o scripts de CI/CD (tu Jenkinsfile)
+docs: — solo documentación (README, comentarios)
+refactor: — cambio de código que no agrega feature ni corrige bug (reestructurar sin cambiar comportamiento)
+test: — agregar o corregir tests, sin tocar código de producción
+chore: — tareas de mantenimiento que no encajan en las anteriores (actualizar dependencias, configurar .gitignore, etc.)
+perf: — cambio enfocado específicamente en mejorar rendimiento
+style: — formato, espacios, punto y coma — nunca lógica

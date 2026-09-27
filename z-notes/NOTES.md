@@ -224,3 +224,9 @@ Build Artifact
   → Build Docker Image (nuevo, si aún no construyes la imagen en el pipeline)
   → Security - SBOM (Syft)          # genera el inventario
   → Security - Container Scan (Grype)  # escanea ese inventario
+
+
+
+
+
+Sobre el IMAGE_TAG_PLACEHOLDER: no puedes hardcodear el tag de build en un manifiesto que vive commiteado en git, porque cambia en cada ejecución de Jenkins (${BUILD_NUMBER}). La forma estándar de resolver esto sin meter herramientas nuevas (Kustomize, Helm) es sustituir el placeholder con sed justo antes del kubectl apply, en el propio stage de Jenkins — te muestro esto abajo.

@@ -2,8 +2,11 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = 'vulnerable-dummy-security-application'
-        IMAGE_TAG  = "${env.BUILD_NUMBER}"
+        IMAGE_NAME   = 'vulnerable-dummy-security-application'
+        IMAGE_TAG    = "${env.BUILD_NUMBER}"
+        GCP_PROJECT  = 'project-f50a094d-d02b-40c5-b0d'
+        GCP_REGION   = 'us-east1'
+        REGISTRY     = "us-east1-docker.pkg.dev/project-f50a094d-d02b-40c5-b0d/vulnerable-dummy"
     }
 
     stages {
@@ -196,7 +199,6 @@ pipeline {
                 sh '''
                     if ! command -v docker >/dev/null 2>&1; then
                         echo "ERROR: el CLI de Docker no está disponible en este agente Jenkins."
-                        echo "Se necesita el socket de Docker montado (docker.sock) y el binario docker instalado."
                         exit 1
                     fi
 
@@ -258,6 +260,70 @@ pipeline {
                         unstable('Grype detectó vulnerabilidades de severidad media o mayor en la imagen.')
                     }
                 }
+            }
+        }
+
+        stage('Push to Registry') {
+            steps {
+                echo '📤 Publicando la imagen en Artifact Registry...'
+                sh '''
+                    gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+        stage('Deploy to Test') {
+            steps {
+                echo '🚀 Desplegando a namespace test...'
+                sh '''
+                    sed "s#IMAGE_TAG_PLACEHOLDER#${IMAGE_TAG}#g; s#REGISTRY_PLACEHOLDER#${REGISTRY}#g" k8s/test/deployment.yaml > /tmp/test-deployment.yaml
+                    kubectl apply -f /tmp/test-deployment.yaml -n test
+                    kubectl apply -f k8s/test/service.yaml -n test
+                    kubectl rollout status deployment/vulnerable-api -n test --timeout=60s
+                '''
+            }
+        }
+
+        stage('Security - DAST (ZAP)') {
+            steps {
+                script {
+                    def exitCode = sh(
+                        script: '''
+                            docker run --rm --network host \
+                                -v $(pwd):/zap/wrk/:rw \
+                                ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+                                -t http://vulnerable-api-service.test.svc.cluster.local/health \
+                                -r zap-report.html -J zap-report.json || true
+                        ''',
+                        returnStatus: true
+                    )
+                    archiveArtifacts artifacts: 'zap-report.*', allowEmptyArchive: true
+                    if (exitCode != 0) {
+                        unstable('ZAP detectó hallazgos en el ambiente de test.')
+                    }
+                }
+            }
+        }
+
+        stage('Approval Gate') {
+            steps {
+                timeout(time: 24, unit: 'HOURS') {
+                    input message: '¿Aprobar despliegue a producción?', submitter: 'devsecops-team'
+                }
+            }
+        }
+
+        stage('Deploy to Prod') {
+            steps {
+                echo '🚀 Desplegando a namespace prod...'
+                sh '''
+                    sed "s#IMAGE_TAG_PLACEHOLDER#${IMAGE_TAG}#g; s#REGISTRY_PLACEHOLDER#${REGISTRY}#g" k8s/prod/deployment.yaml > /tmp/prod-deployment.yaml
+                    kubectl apply -f /tmp/prod-deployment.yaml -n prod
+                    kubectl apply -f k8s/prod/service.yaml -n prod
+                    kubectl rollout status deployment/vulnerable-api -n prod --timeout=60s
+                '''
             }
         }
     }

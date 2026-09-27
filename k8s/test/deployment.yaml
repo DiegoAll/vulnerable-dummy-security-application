@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vulnerable-api
+  namespace: test
+  labels:
+    app: vulnerable-api
+    env: test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vulnerable-api
+  template:
+    metadata:
+      labels:
+        app: vulnerable-api
+        env: test
+    spec:
+      containers:
+      - name: api
+        image: REGISTRY_PLACEHOLDER/vulnerable-dummy-security-application:IMAGE_TAG_PLACEHOLDER
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
+          limits:
+            cpu: "250m"
+            memory: "128Mi"
