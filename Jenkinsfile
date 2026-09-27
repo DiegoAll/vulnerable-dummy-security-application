@@ -107,10 +107,14 @@ pipeline {
                 script {
                     echo '🏗️ Ejecutando KICS para escaneo de IaC (Dockerfile/K8s)...'
                     
-                    // Ejecuta el contenedor de KICS escaneando el directorio actual
+                    // Asegura la disponibilidad de la imagen
+                    sh 'docker pull checkmarx/kics:latest || true'
+
                     def exitCode = sh(
                         script: '''
-                            docker run --rm -v $(pwd):/path checkmarx/kics:latest scan \
+                            docker run --rm \
+                                -v "${WORKSPACE}":/path \
+                                checkmarx/kics:latest scan \
                                 -p /path \
                                 -o /path \
                                 --output-name kics-report \
@@ -119,6 +123,7 @@ pipeline {
                         returnStatus: true
                     )
 
+                    // Archiva los reportes sin fallar el pipeline si el directorio aún no tiene IaC
                     archiveArtifacts artifacts: 'kics-report.*', allowEmptyArchive: true
 
                     if (exitCode != 0) {
