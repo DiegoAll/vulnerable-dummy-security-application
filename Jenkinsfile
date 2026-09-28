@@ -329,19 +329,56 @@ pipeline {
         stage('Security - DAST (ZAP)') {
             steps {
                 script {
+                    echo '🕷️ Ejecutando ZAP baseline dentro del cluster contra el servicio de test...'
+
                     def exitCode = sh(
                         script: '''
-                            docker run --rm --network host \
-                                -v $(pwd):/zap/wrk/:rw \
-                                ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
-                                -t http://vulnerable-api-service.test.svc.cluster.local/health \
-                                -r zap-report.html -J zap-report.json || true
+                            POD=zap-${BUILD_NUMBER}
+                            TARGET=http://vulnerable-api-service.test.svc.cluster.local/health
+
+                            kubectl delete pod $POD -n test --ignore-not-found
+
+                            kubectl run $POD -n test --restart=Never \
+                                --image=ghcr.io/zaproxy/zaproxy:stable \
+                                --command -- sh -c '
+                                    mkdir -p /zap/wrk
+                                    zap-baseline.py -t '"$TARGET"' -r zap-report.html -J zap-report.json
+                                    echo $? > /zap/wrk/exit_code
+                                    touch /zap/wrk/done
+                                    sleep 300
+                                '
+
+                            echo "Esperando a que ZAP termine el escaneo..."
+                            DONE=0
+                            for i in $(seq 1 90); do
+                                if kubectl exec $POD -n test -- test -f /zap/wrk/done 2>/dev/null; then
+                                    DONE=1
+                                    break
+                                fi
+                                sleep 10
+                            done
+
+                            if [ "$DONE" -ne 1 ]; then
+                                echo "ERROR: ZAP no termino a tiempo. Estado del pod:"
+                                kubectl describe pod $POD -n test | tail -20
+                                kubectl delete pod $POD -n test --wait=false
+                                exit 3
+                            fi
+
+                            kubectl exec $POD -n test -- cat /zap/wrk/zap-report.html > zap-report.html || true
+                            kubectl exec $POD -n test -- cat /zap/wrk/zap-report.json > zap-report.json || true
+                            ZAP_EXIT=$(kubectl exec $POD -n test -- cat /zap/wrk/exit_code)
+
+                            kubectl delete pod $POD -n test --wait=false
+                            exit ${ZAP_EXIT:-3}
                         ''',
                         returnStatus: true
                     )
+
                     archiveArtifacts artifacts: 'zap-report.*', allowEmptyArchive: true
+
                     if (exitCode != 0) {
-                        unstable('ZAP detectó hallazgos en el ambiente de test.')
+                        unstable('ZAP detectó hallazgos o no pudo completar el escaneo en el ambiente de test.')
                     }
                 }
             }
