@@ -6,7 +6,11 @@ pipeline {
         IMAGE_TAG    = "${env.BUILD_NUMBER}"
         GCP_PROJECT  = 'project-f50a094d-d02b-40c5-b0d'
         GCP_REGION   = 'us-east1'
+        GCP_ZONE     = 'us-east1-b'
+        GKE_CLUSTER  = 'diego-cluster'
         REGISTRY     = "us-east1-docker.pkg.dev/project-f50a094d-d02b-40c5-b0d/vulnerable-dummy"
+        PATH         = "/tmp/gcloud/bin:${env.PATH}"
+        CLOUDSDK_CORE_DISABLE_PROMPTS = '1'
     }
 
     stages {
@@ -14,6 +18,41 @@ pipeline {
             steps {
                 git branch: 'main',
                     url: 'https://github.com/DiegoAll/vulnerable-dummy-security-application.git'
+            }
+        }
+
+        stage('GCP Authentication') {
+            steps {
+                script {
+                    echo '☁️ Instalando Google Cloud SDK y configurando acceso a GKE...'
+
+                    sh '''
+                        if [ ! -x /tmp/gcloud/bin/gcloud ]; then
+                            echo "Descargando Google Cloud SDK..."
+                            curl -sSfL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz -o /tmp/gcloud.tar.gz
+                            tar -xzf /tmp/gcloud.tar.gz -C /tmp
+                            rm -rf /tmp/gcloud
+                            mv /tmp/google-cloud-sdk /tmp/gcloud
+                            /tmp/gcloud/install.sh --quiet --path-update false --usage-reporting false --command-completion false
+                            rm -f /tmp/gcloud.tar.gz
+                        fi
+
+                        if [ ! -x /tmp/gcloud/bin/kubectl ] || [ ! -x /tmp/gcloud/bin/gke-gcloud-auth-plugin ]; then
+                            /tmp/gcloud/bin/gcloud components install kubectl gke-gcloud-auth-plugin --quiet
+                        fi
+
+                        gcloud version
+                    '''
+
+                    withCredentials([file(credentialsId: 'gcp-service-account-key', variable: 'GCP_KEY_FILE')]) {
+                        sh '''
+                            gcloud auth activate-service-account --key-file="$GCP_KEY_FILE"
+                            gcloud config set project ${GCP_PROJECT}
+                            gcloud container clusters get-credentials ${GKE_CLUSTER} --zone ${GCP_ZONE} --project ${GCP_PROJECT}
+                            kubectl get nodes
+                        '''
+                    }
+                }
             }
         }
 
@@ -267,7 +306,7 @@ pipeline {
             steps {
                 echo '📤 Publicando la imagen en Artifact Registry...'
                 sh '''
-                    gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
+                    gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://${GCP_REGION}-docker.pkg.dev
                     docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
                     docker push ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
                 '''
@@ -278,6 +317,7 @@ pipeline {
             steps {
                 echo '🚀 Desplegando a namespace test...'
                 sh '''
+                    kubectl create namespace test --dry-run=client -o yaml | kubectl apply -f -
                     sed "s#IMAGE_TAG_PLACEHOLDER#${IMAGE_TAG}#g; s#REGISTRY_PLACEHOLDER#${REGISTRY}#g" k8s/test/deployment.yaml > /tmp/test-deployment.yaml
                     kubectl apply -f /tmp/test-deployment.yaml -n test
                     kubectl apply -f k8s/test/service.yaml -n test
@@ -319,6 +359,7 @@ pipeline {
             steps {
                 echo '🚀 Desplegando a namespace prod...'
                 sh '''
+                    kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
                     sed "s#IMAGE_TAG_PLACEHOLDER#${IMAGE_TAG}#g; s#REGISTRY_PLACEHOLDER#${REGISTRY}#g" k8s/prod/deployment.yaml > /tmp/prod-deployment.yaml
                     kubectl apply -f /tmp/prod-deployment.yaml -n prod
                     kubectl apply -f k8s/prod/service.yaml -n prod
