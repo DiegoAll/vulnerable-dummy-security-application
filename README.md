@@ -6,6 +6,10 @@ Vulnerable dummy security application
 
 https://cloud.google.com/workforce-identity-federation?hl=es_419
 
+
+**SE COBRA EL BALANCEADOR**
+
+
         CONTAINER ID   NAME      CPU %    MEM USAGE / LIMIT      MEM %    NET I/O          BLOCK I/O        PIDS
     8bc7bd60ab47   jenkins   0.15%    1.563GiB / 62.43GiB    2.50%    964MB / 32MB     262MB / 7.19GB   84
 

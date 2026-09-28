@@ -318,10 +318,11 @@ pipeline {
                 echo '🚀 Desplegando a namespace test...'
                 sh '''
                     kubectl create namespace test --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl apply -f k8s/test/limits.yaml
                     sed "s#IMAGE_TAG_PLACEHOLDER#${IMAGE_TAG}#g; s#REGISTRY_PLACEHOLDER#${REGISTRY}#g" k8s/test/deployment.yaml > /tmp/test-deployment.yaml
                     kubectl apply -f /tmp/test-deployment.yaml -n test
                     kubectl apply -f k8s/test/service.yaml -n test
-                    kubectl rollout status deployment/vulnerable-api -n test --timeout=60s
+                    kubectl rollout status deployment/vulnerable-api -n test --timeout=120s
                 '''
             }
         }
@@ -329,51 +330,64 @@ pipeline {
         stage('Security - DAST (ZAP)') {
             steps {
                 script {
-                    echo '🕷️ Ejecutando ZAP baseline dentro del cluster contra el servicio de test...'
+                    echo '🕷️ Exponiendo temporalmente el servicio de test (LoadBalancer restringido a la IP del runner)...'
 
-                    def exitCode = sh(
-                        script: '''
-                            POD=zap-${BUILD_NUMBER}
-                            TARGET=http://vulnerable-api-service.test.svc.cluster.local/health
+                    def exitCode = 3
+                    try {
+                        exitCode = sh(
+                            script: '''
+                                RUNNER_IP=$(curl -sf https://api.ipify.org)
+                                echo "IP publica del runner: $RUNNER_IP"
 
-                            kubectl delete pod $POD -n test --ignore-not-found
+                                kubectl patch svc vulnerable-api-service -n test -p '{"spec":{"type":"LoadBalancer","loadBalancerSourceRanges":["'"$RUNNER_IP"'/32"]}}'
 
-                            kubectl run $POD -n test --restart=Never \
-                                --image=ghcr.io/zaproxy/zaproxy:stable \
-                                --command -- sh -c '
-                                    mkdir -p /zap/wrk
-                                    zap-baseline.py -t '"$TARGET"' -r zap-report.html -J zap-report.json
-                                    echo $? > /zap/wrk/exit_code
-                                    touch /zap/wrk/done
-                                    sleep 300
-                                '
-
-                            echo "Esperando a que ZAP termine el escaneo..."
-                            DONE=0
-                            for i in $(seq 1 90); do
-                                if kubectl exec $POD -n test -- test -f /zap/wrk/done 2>/dev/null; then
-                                    DONE=1
-                                    break
+                                LB_IP=""
+                                for i in $(seq 1 60); do
+                                    LB_IP=$(kubectl get svc vulnerable-api-service -n test -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                                    if [ -n "$LB_IP" ]; then break; fi
+                                    sleep 5
+                                done
+                                if [ -z "$LB_IP" ]; then
+                                    echo "ERROR: el LoadBalancer no recibio IP a tiempo"
+                                    exit 3
                                 fi
-                                sleep 10
-                            done
+                                echo "LoadBalancer listo en: $LB_IP"
 
-                            if [ "$DONE" -ne 1 ]; then
-                                echo "ERROR: ZAP no termino a tiempo. Estado del pod:"
-                                kubectl describe pod $POD -n test | tail -20
-                                kubectl delete pod $POD -n test --wait=false
-                                exit 3
-                            fi
+                                CODE=000
+                                for i in $(seq 1 36); do
+                                    CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://$LB_IP/health || true)
+                                    if [ "$CODE" = "200" ]; then break; fi
+                                    sleep 5
+                                done
+                                if [ "$CODE" != "200" ]; then
+                                    echo "ERROR: la API no responde 200 por el LoadBalancer (ultimo codigo: $CODE)"
+                                    exit 3
+                                fi
 
-                            kubectl exec $POD -n test -- cat /zap/wrk/zap-report.html > zap-report.html || true
-                            kubectl exec $POD -n test -- cat /zap/wrk/zap-report.json > zap-report.json || true
-                            ZAP_EXIT=$(kubectl exec $POD -n test -- cat /zap/wrk/exit_code)
+                                docker rm -f zap-${BUILD_NUMBER} >/dev/null 2>&1 || true
 
-                            kubectl delete pod $POD -n test --wait=false
-                            exit ${ZAP_EXIT:-3}
-                        ''',
-                        returnStatus: true
-                    )
+                                set +e
+                                docker run --name zap-${BUILD_NUMBER} \
+                                    ghcr.io/zaproxy/zaproxy:stable sh -c \
+                                    "mkdir -p /zap/wrk && zap-baseline.py -t http://$LB_IP/health -r zap-report.html -J zap-report.json"
+                                ZAP_EXIT=$?
+                                set -e
+
+                                docker cp zap-${BUILD_NUMBER}:/zap/wrk/zap-report.html . || true
+                                docker cp zap-${BUILD_NUMBER}:/zap/wrk/zap-report.json . || true
+                                docker rm -f zap-${BUILD_NUMBER} >/dev/null 2>&1 || true
+
+                                exit $ZAP_EXIT
+                            ''',
+                            returnStatus: true
+                        )
+                    } finally {
+                        echo '🧹 Apagando el LoadBalancer temporal...'
+                        sh '''
+                            kubectl patch svc vulnerable-api-service -n test -p '{"spec":{"type":"ClusterIP","loadBalancerSourceRanges":null}}' || true
+                            kubectl get svc vulnerable-api-service -n test
+                        '''
+                    }
 
                     archiveArtifacts artifacts: 'zap-report.*', allowEmptyArchive: true
 
@@ -397,10 +411,11 @@ pipeline {
                 echo '🚀 Desplegando a namespace prod...'
                 sh '''
                     kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl apply -f k8s/prod/limits.yaml
                     sed "s#IMAGE_TAG_PLACEHOLDER#${IMAGE_TAG}#g; s#REGISTRY_PLACEHOLDER#${REGISTRY}#g" k8s/prod/deployment.yaml > /tmp/prod-deployment.yaml
                     kubectl apply -f /tmp/prod-deployment.yaml -n prod
                     kubectl apply -f k8s/prod/service.yaml -n prod
-                    kubectl rollout status deployment/vulnerable-api -n prod --timeout=60s
+                    kubectl rollout status deployment/vulnerable-api -n prod --timeout=120s
                 '''
             }
         }
